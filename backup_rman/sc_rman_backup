@@ -1,0 +1,82 @@
+#!/bin/bash
+
+#
+#
+#
+set -x
+
+export LANG=en_US
+export ORACLE_HOME=/opt/ora11g/product/11.2.0/dbhome_1
+export PATH=$PATH:$ORACLE_HOME/bin
+export ORACLE_SID=audkeydb
+export ORACLE_USER=oracle
+
+
+curpath=/home/oracle
+today=`date`
+backup_date=`date +%d`
+#log_file=$curpath/rmanbak"$backup_date".out
+
+usr=`id | cut -d "(" -f2 | cut -d ")" -f1`
+echo "-----------------$today-------------------"
+echo "ORACLE_SID: $ORACLE_SID"
+echo "ORACLE_HOME:$ORACLE_HOME"
+echo "ORACLE_USER:$ORACLE_USER"
+echo "=========================================="
+echo "BACKUP DATABASE BEGIN......"
+echo "                   "
+
+#chmod 666 $log_file
+ 
+WEEK_DAILY=`date +%a`
+case  "$WEEK_DAILY" in
+       "Mon" | "Tue" | "Wed")
+            BAK_LEVEL=2
+            ;;
+       "Thu")
+            BAK_LEVEL=1
+            ;;
+       "Fri" | "Sat")
+            BAK_LEVEL=2
+            ;;
+       "Sun")
+            BAK_LEVEL=0
+            ;;
+       "*")
+            BAK_LEVEL=error
+esac
+ 
+echo "Today is : $WEEK_DAILY  incremental level=$BAK_LEVEL"
+
+RUN_STR="
+rman TARGET / append <<EOF
+run
+{
+     allocate channel c1 type disk;
+     backup check logical incremental level= $BAK_LEVEL  skip inaccessible filesperset 5 Database  tag='auddb_lev"$BAK_LEVEL"' ;
+     sql 'alter system archive log current';
+     backup archivelog all tag='arc_bak' skip inaccessible  filesperset 5 not  backed up 1 times  delete input;
+       
+     release channel c1;
+}
+allocate channel for maintenance device type disk;
+report obsolete;
+delete noprompt obsolete;
+crosscheck backup;
+delete noprompt expired backup;
+list backup summary;
+release channel;
+EOF
+"
+#run script
+/bin/bash -c "$RUN_STR"
+
+if [ "$?" = "0" ]
+then
+        LOGMSG="ended successfully"
+else
+        LOGMSG="ended in error"
+fi
+echo $LOGMSG
+echo ==== $LOGMSG on `date` ==== 
+exit
