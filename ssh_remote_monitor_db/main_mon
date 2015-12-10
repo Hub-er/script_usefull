@@ -6,20 +6,20 @@ mail_list="for_monitor@xxx.com"
 set -x
 
 curpath=/home/tendyron/sql_check
-script_for_summary=$curpath/sc_159summary.sh
-report_for_summary=$curpath/rp_159summary.txt
-script_for_attach=$curpath/sc_159alert.sh
-report_for_attach=$curpath/rp_159alert.txt
-script_for_backup=$curpath/sc_159backup.sh
-report_for_backup=$curpath/rp_159backup.txt
+script_for_summary=$curpath/sc_summary.sh
+report_for_summary=$curpath/rp_summary.txt
+script_for_attach=$curpath/sc_alert.sh
+report_for_attach=$curpath/rp_alert.txt
+script_for_backup=$curpath/sc_backup.sh
+report_for_backup=$curpath/rp_backup.txt
 
 #echo $report_159
-ssh oracle@172.16.10.159 'bash -s' < $script_for_summary > $report_for_summary
-ssh oracle@172.16.10.159 'bash -s' < $script_for_attach > $report_for_attach
-ssh oracle@172.16.10.159 'bash -s' < $script_for_backup > $report_for_backup
+ssh oracle@172.16.10.xxx 'bash -s' < $script_for_summary > $report_for_summary
+ssh oracle@172.16.10.xxx 'bash -s' < $script_for_attach > $report_for_attach
+ssh oracle@172.16.10.xxx 'bash -s' < $script_for_backup > $report_for_backup
 
 if [ `cat $report_for_summary | wc -l` -gt 0 ]; then
-	cat $report_for_summary | mutt -s "monitor 159 auddb" -a $report_for_attach $report_for_backup -- $mail_list
+	cat $report_for_summary | mutt -s "monitor  auddb" -a $report_for_attach $report_for_backup -- $mail_list
 else 
-	mutt -s "monitor 159 auddb" -a $report_for_attach -- $mail_list < "no result present.maybe error occurs!"
+	mutt -s "monitor  auddb" -a $report_for_attach -- $mail_list < "no result present.maybe error occurs!"
 fi
