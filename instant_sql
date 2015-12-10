@@ -1,0 +1,140 @@
+#!/bin/bash
+#
+#
+#
+
+#set -x
+
+usage="usage:\n
+	1：实例状态、参数、连接用户、会话查询\n
+	5：获取会话或全局转储位置，用于诊断\n
+	6：重做日志状态	7：文件管理  8：锁、阻塞信息\n
+	9：闩信息	10：等待统计 11：对象检查\n
+	12：定时任务检查	13：基本信息查询	15：备份\n"
+fmt="set pagesize 100
+     set linesize 300"
+
+var[1]='host echo "连接用户"
+	col USERNAME for a15
+	select inst_id, username, count(*) from gv\$session group by inst_id, username;
+	
+	host echo "实例状态："
+	col instance_name for a15
+	col status for a15
+	select instance_name, status from v\$instance;
+	
+	host echo "游标设置："
+	col name for a20
+	col value for a20
+	select name, value from v\$parameter where name='\''open_cursors'\'';
+	
+	host echo "会话信息："
+	select sessions_current, sessions_highwater from v\$license;'
+var[5]='col name for a15
+	col value for a70
+	select value from v\$diag_info where name='\''Default Trace File'\'';
+	show parameter user_dump_dest'
+var[6]='col member for a60
+	col status for a10
+	col type for a10
+	select group#,  bytes/1024/1024 "size(m)", archived, s.status, type, member
+	from v\$log s join v\$logfile t using(group#)
+	order by group#, MEMBER;'
+var[7]='col file_name for a60
+	col tablespace_name for a20
+	col ONLINE_STATUS for a10
+	col status for a10
+	select file_name, tablespace_name, online_status, round((s.bytes+t.bytes)/1024/1024,2) "total(M)"
+		, round(t.bytes*100/(s.bytes+t.bytes), 2) "free(%)", status, autoextensible
+		, round(maxbytes/1024/1024/1024, 2) "max(G)"
+	from dba_data_files join sys.sm\$ts_used s using(tablespace_name) join sys.sm\$ts_free t using(tablespace_name)
+	order by file_name, tablespace_name;'
+var[8]='host echo "锁信息"
+		select sid, type, lmode, ctime, block from v\$lock where type not in('\''MR'\'', '\''AE'\'');
+		host echo "查询阻塞会话"	
+		select sid, serial#, sql_id, status, blocking_session from v\$session where sid in (select session_id from v\$locked_object);
+		host echo "阻塞sql文本"
+		select sql_id, sql_text from v\$sqltext where sql_id in (select sql_id from v\$session where sid in (select session_id from v\$locked_object));
+		host echo "锁阻塞对象"
+		select owner, object_name, object_type from dba_objects where object_id in (select object_id from v\$locked_object);
+		host echo "会话id及系统进程(据此可以alter system kill session (SID, SERIAL#) 或者 kill -9 PID)"
+		col SPID for a10
+		col PROGRAM for a30
+		select ses.SID, ses.SERIAL#, pro.spid, pro.program from v\$session ses, v\$process pro where ses.paddr=pro.addr order by ses.sid;
+		'
+var[9]='host echo "闩检查（前10）"
+		select * from (select name, gets, misses, immediate_gets, spin_gets from v\$latch order by 2 desc) where rownum<11;
+		host echo"闩使用检查【太长】"
+		'
+var[10]='host echo "了解数据库当前连接会话的等待情况"
+		col EVENT for a30
+		col WAIT_TIME_MICRO	for 999999999999999
+		select sid, event, wait_time_micro from v\$session_wait order by 3;
+		host echo "top10等待事件"
+		select * from (
+			select event, total_waits, average_wait, time_waited from v\$system_event
+			where wait_class <> '\''Idle'\'' order by time_waited desc)
+		where rownum < = 10;
+		host echo "会话统计数据"
+		col name for a20
+		select s.sid, s.statistic#, n.name, s.value from v\$sesstat s, v\$statname n where s.statistic#=n.statistic# and n.name='\''redo size'\'';
+		host echo "系统级统计数据"
+		select * from v\$sysstat where name='\''redo size'\'';
+		'
+var[11]='host echo "表信息"
+		select * from (select owner, table_name, num_rows from dba_objects order by num_rows desc nulls last) where rownum<11;
+		host echo "表统计信息"
+		select table_name, last_analyzed from dba_tab_statistics;
+		host echo "索引信息"
+		select * from (
+			select index_name, num_rows, leaf_blocks, clustering_factor from dba_indexes order by 4 desc nulls last)
+		where rownum<11;
+		host echo "分区信息"
+		select table_name, partitioning_type, partition_count, status from dba_part_tables;
+		select table_name, partition_name, high_value from dba_tab_partitions where rownum<11
+		host echo "约束信息"
+		select constraint_name, constraint_type from dba_constraints;
+		host echo "失效对象"
+		select owner, object_name, object_type, status from dba_objects where status <> '\''VALID'\'';
+		'
+var[12]='host echo "用户定时任务"
+		select job, log_user, last_date, next_date, interval, broken, failures from dba_jobs;
+		host echo "系统定时任务"
+		select job_name, start_date, repeat_interval from dba_scheduler_jobs;
+		host echo "系统定时任务--11g+"
+		select client_name, mean_job_duration from dba_autotask_client;
+		'
+var[13]='host echo "license相关"
+	select cpu_count_current, cpu_core_count_current, cpu_socket_count_current from v\$license;
+	host echo "版本组件"
+	col BANNER for a100
+	col PARAMETER for a60
+	col VALUE for a10
+		select * from v\$version;
+		select * from v\$option;
+		host echo "psu检查(版本升级历史)"
+		select * from dba_registry_history;
+		'
+var[14]='host echo "物理备份检查"
+		select backup_type, start_time, completion_time, block_size from v\$backup_set;
+		'		
+declare -i sel
+declare -i var_sz=${#var[*]}
+
+while true; do
+	
+	echo -e $usage
+	read -p "你选择：" sel
+
+	if [[ ! ${!var[*]} =~ $sel ]]; then 
+		echo "没有相应的sql语句！"
+	else
+		
+		ssh oracle@172.16.10.159 "
+		sqlplus -s / as sysdba << EOF
+		$fmt
+		${var[$sel]} 
+		exit
+EOF"
+	fi
+done
