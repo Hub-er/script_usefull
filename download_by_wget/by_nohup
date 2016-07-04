@@ -1,0 +1,8 @@
+#!/bin/bash
+
+path=/home/fulnm/download/IMGS/img_url/vgg_split
+for folder in {A..Z}
+do
+  #echo "nohup ./download_new.sh $path/$folder &> $path/$folder/nohup$folder.out"
+  nohup ./download_new.sh $path/$folder &> $path/$folder/nohup$folder.out &
+done
